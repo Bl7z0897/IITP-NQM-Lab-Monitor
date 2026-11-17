@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 18B · Live conditions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:#e8edf0; --panel:#f7f9fa; --ink:#13232b; --muted:#5d7079; --line:#cbd5da;
+  --ok:#2b7a58; --warn:#b4701a; --bad:#b3263c; --accent:#0d6b8a; --band:#cfe6da;
+  --serif:'Fraunces', Georgia, 'Times New Roman', serif;
+  --sans:'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:400 16px/1.5 var(--sans); }
+.wrap { max-width:960px; margin:0 auto; padding:20px 18px 48px; }
+header { display:flex; justify-content:space-between; align-items:center; gap:12px; font-size:.9rem; color:var(--muted); }
+header b { color:var(--ink); font-weight:700; }
+.live { display:inline-flex; align-items:center; gap:8px; }
+.dot { width:9px; height:9px; border-radius:50%; background:var(--muted); }
+.dot.ok { background:var(--ok); animation:pulse 2s infinite; }
+.dot.bad { background:var(--bad); }
+@keyframes pulse { 50% { opacity:.35; } }
+@media (prefers-reduced-motion:reduce) { .dot.ok { animation:none; } }
+
+.verdict { padding:44px 0 28px; border-bottom:2px solid var(--ink); }
+.verdict h1 { font:600 clamp(2rem,6.5vw,3.6rem)/1.05 var(--serif); margin:0 0 12px; letter-spacing:-.01em; max-width:16ch; }
+.verdict h1.warn { color:var(--warn); } .verdict h1.bad { color:var(--bad); }
+.verdict p { margin:0; color:var(--muted); max-width:60ch; }
+
+.rows { margin:0; padding:0; list-style:none; }
+.row { display:grid; grid-template-columns:150px 1fr minmax(120px,1.2fr); align-items:center; gap:18px; padding:18px 0; border-bottom:1px solid var(--line); }
+.row .name { font-weight:700; }
+.row .sub { display:block; font-weight:400; font-size:.8rem; color:var(--muted); }
+.val { font:600 2.2rem/1 var(--serif); }
+.val small { font:500 .9rem var(--sans); color:var(--muted); margin-left:4px; }
+.val.warn { color:var(--warn); } .val.bad { color:var(--bad); }
+.track { position:relative; height:10px; border-radius:5px; background:var(--line); }
+.band { position:absolute; top:0; bottom:0; background:var(--band); border-radius:5px; }
+.pin { position:absolute; top:-5px; width:4px; height:20px; border-radius:2px; background:var(--ink); transform:translateX(-50%); transition:left .6s; }
+.pin.warn { background:var(--warn); } .pin.bad { background:var(--bad); }
+.ends { display:flex; justify-content:space-between; font-size:.72rem; color:var(--muted); margin-top:9px; }
+.nogauge { font-size:.85rem; color:var(--muted); }
+
+.tools { display:flex; justify-content:space-between; align-items:end; margin:40px 0 12px; gap:12px; flex-wrap:wrap; }
+h2 { font:600 1.5rem/1.1 var(--serif); margin:0; }
+.seg { display:flex; border:1px solid var(--ink); border-radius:8px; overflow:hidden; }
+.seg button { font:500 .85rem var(--sans); padding:7px 14px; border:0; background:transparent; color:var(--ink); cursor:pointer; }
+.seg button[aria-pressed="true"] { background:var(--ink); color:var(--bg); }
+.seg button:focus-visible, a:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+.chart { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 14px 8px; margin-bottom:14px; }
+.chart h3 { font:700 .9rem var(--sans); margin:0 0 6px; }
+.chart div { position:relative; height:200px; }
+footer { margin-top:28px; font-size:.8rem; color:var(--muted); }
+footer a { color:var(--accent); }
+@media (max-width:640px) {
+  .row { grid-template-columns:1fr auto; gap:10px 12px; }
+  .row .gauge { grid-column:1 / -1; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span><b>Lab 18B</b> · live conditions</span>
+    <span class="live"><span class="dot" id="dot"></span><span id="age">Connecting…</span></span>
+  </header>
+
+  <section class="verdict" aria-live="polite">
+    <h1 id="headline">Reading the room…</h1>
+    <p id="detail">Waiting for the first reading from the sensors.</p>
+  </section>
+
+  <ul class="rows" id="rows"></ul>
+
+  <div class="tools">
+    <h2>History</h2>
+    <div class="seg" role="group" aria-label="Time range">
+      <button data-h="1" aria-pressed="false">1 h</button>
+      <button data-h="6" aria-pressed="true">6 h</button>
+      <button data-h="24" aria-pressed="false">24 h</button>
+    </div>
+  </div>
+  <div class="chart"><h3>Temperature (°C) and humidity (%)</h3><div><canvas id="c1"></canvas></div></div>
+  <div class="chart"><h3>Ambient light (lux)</h3><div><canvas id="c2"></canvas></div></div>
+  <div class="chart"><h3>Magnetic field (µT)</h3><div><canvas id="c3"></canvas></div></div>
+
+  <footer id="foot">Updates every 5 seconds. Email alerts go out when a reading leaves its green band.</footer>
+</div>
+
+<script>
+const DEMO = new URLSearchParams(location.search).has('demo');
+let hours = 6, latest = null, history = [], magBase = null;
+
+// Green band = acceptable range (matches config.py). axis = gauge extent.
+const M = [
+  { k:'temperature', n:'Temperature', u:'°C', d:1, lo:18, hi:30, a:[10,40] },
+  { k:'humidity', n:'Humidity', u:'%', d:0, lo:20, hi:65, a:[0,100] },
+  { k:'ambient_light', n:'Light', sub:'ambient', u:'lux', d:0, lo:5, hi:2000, a:[0,3000] },
+  { k:'proximity', n:'Proximity', sub:'higher = closer', u:'', d:0, lo:0, hi:2000, a:[0,5000] },
+  { k:'mag_magnitude', n:'Magnetic field', sub:'vs. startup baseline', u:'µT', d:1, a:[0,1], dyn:true },
+  { k:'pressure', n:'Pressure', u:'hPa', d:0 }
+];
+
+const rowsEl = document.getElementById('rows');
+M.forEach(m => {
+  const li = document.createElement('li'); li.className = 'row';
+  li.innerHTML = '<div class="name">' + m.n + (m.sub ? '<span class="sub">' + m.sub + '</span>' : '') + '</div>' +
+    '<div class="val" id="v-' + m.k + '">–<small>' + m.u + '</small></div>' +
+    '<div class="gauge" id="g-' + m.k + '"></div>';
+  rowsEl.appendChild(li);
+});
+
+function bounds(m) {
+  if (m.dyn) { const b = magBase ?? 0; return { lo:b - 15, hi:b + 15, a:[b - 40, b + 40] }; }
+  return { lo:m.lo, hi:m.hi, a:m.a };
+}
+function status(m, v) {
+  const b = bounds(m);
+  if (b.lo === undefined || v == null) return 'ok';
+  if (v >= b.lo && v <= b.hi) return 'ok';
+  const span = b.hi - b.lo;
+  return (v < b.lo - span * .25 || v > b.hi + span * .25) ? 'bad' : 'warn';
+}
+const pct = (v, a) => Math.max(0, Math.min(100, (v - a[0]) / (a[1] - a[0]) * 100));
+const utc = s => new Date(s.endsWith('Z') ? s : s + 'Z');
+
+function render() {
+  if (!latest || !latest.timestamp) return;
+  const issues = [];
+  M.forEach(m => {
+    const v = latest[m.k]; if (v == null) return;
+    const st = status(m, v);
+    const el = document.getElementById('v-' + m.k);
+    el.className = 'val ' + (st === 'ok' ? '' : st);
+    el.innerHTML = Number(v).toFixed(m.d) + '<small>' + m.u + '</small>';
+    const g = document.getElementById('g-' + m.k);
+    const b = bounds(m);
+    if (b.lo === undefined) { g.innerHTML = '<span class="nogauge">Logged for trends, no alert limit.</span>'; return; }
+    if (m.dyn && magBase === null) { g.innerHTML = '<span class="nogauge">Setting baseline…</span>'; return; }
+    g.innerHTML = '<div class="track"><div class="band" style="left:' + pct(b.lo, b.a) + '%;width:' + (pct(b.hi, b.a) - pct(b.lo, b.a)) + '%"></div>' +
+      '<div class="pin ' + (st === 'ok' ? '' : st) + '" style="left:' + pct(v, b.a) + '%"></div></div>' +
+      '<div class="ends"><span>' + b.lo.toFixed(m.d) + '</span><span>' + b.hi.toFixed(m.d) + ' ' + m.u + '</span></div>';
+    if (st !== 'ok') issues.push({ m, v, st, dir: v < b.lo ? 'low' : 'high' });
+  });
+  const h = document.getElementById('headline'), d = document.getElementById('detail');
+  if (!issues.length) {
+    h.className = ''; h.textContent = 'The lab is comfortable.';
+    d.textContent = 'Every monitored reading is inside its normal range.';
+  } else {
+    const worst = issues.some(i => i.st === 'bad');
+    h.className = worst ? 'bad' : 'warn';
+    h.textContent = issues.length === 1 ? issues[0].m.n + ' is ' + issues[0].dir + '.' : issues.length + ' readings need attention.';
+    d.textContent = issues.map(i => i.m.n + ' ' + Number(i.v).toFixed(i.m.d) + ' ' + i.m.u + ' (' + i.dir + ')').join(' · ');
+  }
+}
+
+function tickAge() {
+  const dot = document.getElementById('dot'), age = document.getElementById('age');
+  if (!latest || !latest.timestamp) return;
+  const s = Math.round((Date.now() - utc(latest.timestamp)) / 1000);
+  if (DEMO) { dot.className = 'dot ok'; age.textContent = 'Sample data'; return; }
+  if (s > 60) {
+    dot.className = 'dot bad'; age.textContent = 'No new reading for ' + (s > 120 ? Math.round(s / 60) + ' min' : s + ' s');
+    document.getElementById('headline').textContent = 'Sensors stopped reporting.';
+    document.getElementById('headline').className = 'bad';
+    document.getElementById('detail').textContent = 'Check that the poller service is running on the Pi: systemctl status lab-poller.service';
+  } else { dot.className = 'dot ok'; age.textContent = 'Live · updated ' + s + ' s ago'; }
+}
+
+// ---- data ----
+function sample(t) {
+  const x = t / 60000;
+  return {
+    timestamp: new Date(t).toISOString(),
+    temperature: 26 + 3 * Math.sin(x / 40) + Math.random() * .3,
+    humidity: 48 + 8 * Math.sin(x / 55 + 1) + Math.random(),
+    pressure: 1004 + 2 * Math.sin(x / 90),
+    ambient_light: 320 + 80 * Math.sin(x / 25) + Math.random() * 10,
+    proximity: Math.random() < .03 ? 2600 : 40 + Math.random() * 30,
+    mag_x: 18 + Math.random(), mag_y: -7 + Math.random(), mag_z: -34 + Math.random(),
+    mag_magnitude: 39 + Math.random() * 1.5
+  };
+}
+async function getLatest() {
+  if (DEMO) return sample(Date.now());
+  const r = await fetch('/api/latest'); return r.json();
+}
+async function getHistory() {
+  if (DEMO) { const out = [], n = hours * 30, now = Date.now(); for (let i = n; i >= 0; i--) out.push(sample(now - i * 2 * 60000)); return out; }
+  const r = await fetch('/api/history?hours=' + hours); return r.json();
+}
+function setBaseline(rows) {
+  if (magBase !== null || rows.length < 10) return;
+  magBase = rows.slice(0, 10).reduce((s, r) => s + r.mag_magnitude, 0) / 10;
+}
+
+// ---- charts ----
+const css = getComputedStyle(document.documentElement);
+const col = n => css.getPropertyValue(n).trim();
+const base = { responsive:true, maintainAspectRatio:false, animation:false, interaction:{ mode:'index', intersect:false },
+  plugins:{ legend:{ labels:{ boxWidth:12, color:col('--ink') } } },
+  scales:{ x:{ ticks:{ maxTicksLimit:6, color:col('--muted') }, grid:{ display:false } }, y:{ ticks:{ color:col('--muted') }, grid:{ color:col('--line') } } } };
+const ds = (label, color, extra) => Object.assign({ label, data:[], borderColor:color, borderWidth:2, pointRadius:0, tension:.3 }, extra || {});
+const c1 = new Chart('c1', { type:'line', data:{ labels:[], datasets:[ ds('Temperature', col('--bad'), { yAxisID:'y' }), ds('Humidity', col('--accent'), { yAxisID:'y1' }) ] },
+  options: Object.assign({}, base, { scales:{ x:base.scales.x, y:base.scales.y, y1:{ position:'right', grid:{ display:false }, ticks:{ color:col('--muted') } } } }) });
+const c2 = new Chart('c2', { type:'line', data:{ labels:[], datasets:[ ds('Light', col('--warn')) ] }, options:base });
+const c3 = new Chart('c3', { type:'line', data:{ labels:[], datasets:[ ds('Magnitude', col('--ink'), { borderWidth:3 }), ds('X', '#8aa5b1'), ds('Y', '#5d9c88'), ds('Z', '#b58aa0') ] }, options:base });
+
+function drawCharts() {
+  const L = history.map(r => utc(r.timestamp).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }));
+  const set = (c, series) => { c.data.labels = L; series.forEach((f, i) => c.data.datasets[i].data = history.map(f)); c.update(); };
+  set(c1, [r => r.temperature, r => r.humidity]);
+  set(c2, [r => r.ambient_light]);
+  set(c3, [r => r.mag_magnitude, r => r.mag_x, r => r.mag_y, r => r.mag_z]);
+}
+
+async function refreshLatest() {
+  try { latest = await getLatest(); render(); tickAge(); }
+  catch (e) {
+    document.getElementById('dot').className = 'dot bad';
+    document.getElementById('age').textContent = 'Can’t reach the Pi';
+    document.getElementById('foot').innerHTML = 'Dashboard server not responding. <a href="?demo=1">Preview with sample data</a>';
+  }
+}
+async function refreshHistory() {
+  try { history = await getHistory(); setBaseline(history); drawCharts(); render(); } catch (e) {}
+}
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  hours = +b.dataset.h;
+  document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  refreshHistory();
+}));
+
+(async () => { await refreshHistory(); await refreshLatest(); })();
+setInterval(refreshLatest, 5000);
+setInterval(refreshHistory, 30000);
+setInterval(tickAge, 1000);
+</script>
+</body>
+</html>
